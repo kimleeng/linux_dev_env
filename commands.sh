@@ -40,7 +40,8 @@ sh -c "$(curl -fsSL https://raw.github.com/robbyrussell/oh-my-zsh/master/tools/i
 # get plug ins and themes
 git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 git clone https://github.com/romkatv/powerlevel10k.git $ZSH_CUSTOM/themes/powerlevel10k
+git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
 
 #In ~/.zshrc edit with emacs or editor of choice
 #ZSH_THEME=powerlevel10k/powerlevel10k
-#plugins=(git zsh-autosuggestions pip)
+#plugins=(git zsh-autosuggestions zsh-syntax-highlighting pip)
