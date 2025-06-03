@@ -1,0 +1,36 @@
+# General ignores
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+.#*
+
+# OS-specific ignores
+.DS_Store
+Thumbs.db
+
+# Editor/IDE specific ignores
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Python specific (though not used here, good general practice)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Node specific (though not used here)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Archives (if any are temporarily stored in the repo)
+*.tar.gz
+*.zip
+*.tar.xz
