@@ -58,11 +58,6 @@
         app_paths:
           - /Applications/Warp.app
 
-      - label: Docker Desktop
-        cask: docker-desktop
-        app_paths:
-          - /Applications/Docker.app
-
       - label: OrbStack
         cask: orbstack
         app_paths:
@@ -187,6 +182,53 @@
       loop: "{{ formula_checks.results }}"
       when: item.rc != 0
 
+    - name: Check Mac App Store applications
+      ansible.builtin.shell: |
+        set -eu
+
+        {% for app_path in item.app_paths %}
+        if [ -e {{ app_path | quote }} ]; then
+          exit 0
+        fi
+        {% endfor %}
+
+        if mas list | awk '{print $1}' | grep -Fx {{ item.id | string | quote }} >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        exit 1
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ macos_app_store_apps }}"
+      register: mas_app_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Build missing Mac App Store app list
+      ansible.builtin.set_fact:
+        missing_mas_apps: >-
+          {{
+            mas_app_checks.results
+            | selectattr('rc', 'ne', 0)
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: Install missing Mac App Store apps
+      ansible.builtin.shell: |
+        set -eu
+
+        mas get {{ item.id }}
+      args:
+        executable: /bin/sh
+      become: true
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ missing_mas_apps }}"
+      when: missing_mas_apps | length > 0
+
     - name: Show Homebrew casks skipped on unsupported architecture
       ansible.builtin.debug:
         msg: "{{ item.label }} requires Apple Silicon; skipping on {{ ansible_facts['architecture'] }}."
@@ -232,73 +274,6 @@
       when:
         - item.rc != 0
         - not (item.item.requires_arm64 | default(false)) or ansible_facts['architecture'] == "arm64"
-
-    - name: Check Mac App Store applications
-      ansible.builtin.shell: |
-        set -eu
-
-        {% for app_path in item.app_paths %}
-        if [ -e {{ app_path | quote }} ]; then
-          exit 0
-        fi
-        {% endfor %}
-
-        if mas list | awk '{print $1}' | grep -Fx {{ item.id | string | quote }} >/dev/null 2>&1; then
-          exit 0
-        fi
-
-        exit 1
-      args:
-        executable: /bin/sh
-      environment:
-        PATH: "{{ homebrew_path }}"
-      loop: "{{ macos_app_store_apps }}"
-      register: mas_app_checks
-      changed_when: false
-      failed_when: false
-
-    - name: Build missing Mac App Store app list
-      ansible.builtin.set_fact:
-        missing_mas_apps: >-
-          {{
-            mas_app_checks.results
-            | selectattr('rc', 'ne', 0)
-            | map(attribute='item')
-            | list
-          }}
-
-    - name: Check Mac App Store account
-      ansible.builtin.shell: |
-        mas account >/dev/null
-      args:
-        executable: /bin/sh
-      environment:
-        PATH: "{{ homebrew_path }}"
-      register: mas_account_check
-      changed_when: false
-      failed_when: false
-      when: missing_mas_apps | length > 0
-
-    - name: Stop when Mac App Store apps are missing and no account is signed in
-      ansible.builtin.fail:
-        msg: >-
-          The Mac App Store apps are missing: {{ missing_mas_apps | map(attribute='label') | join(', ') }}.
-          Sign in to the App Store, then rerun this playbook.
-      when:
-        - missing_mas_apps | length > 0
-        - mas_account_check.rc | default(1) != 0
-
-    - name: Install missing Mac App Store apps
-      ansible.builtin.shell: |
-        set -eu
-
-        mas install {{ item.id }}
-      args:
-        executable: /bin/sh
-      environment:
-        PATH: "{{ homebrew_path }}"
-      loop: "{{ missing_mas_apps }}"
-      when: missing_mas_apps | length > 0
 
     - name: Show macOS install summary
       ansible.builtin.debug:

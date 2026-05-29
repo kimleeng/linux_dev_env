@@ -101,6 +101,12 @@ Run it locally on macOS:
 ansible-playbook -i localhost, -c local macos.yaml
 ```
 
+If Amphetamine or another Mac App Store app is missing, use:
+
+```sh
+ansible-playbook -i localhost, -c local --ask-become-pass macos.yaml
+```
+
 It checks for and installs:
 
 - Visual Studio Code
@@ -111,7 +117,6 @@ It checks for and installs:
 - WhatsApp
 - Vivaldi
 - Warp
-- Docker Desktop
 - OrbStack
 - Rectangle
 - Amphetamine
@@ -124,10 +129,10 @@ It checks for and installs:
 Notes:
 
 - Homebrew is installed automatically if it is missing.
-- Amphetamine is installed from the Mac App Store with `mas`, so you need to be signed in to the App Store before that app can be installed.
+- Amphetamine is installed from the Mac App Store with `mas get`, so you need to be signed in to the App Store. `mas` 7 requires sudo for App Store installs, so run with `--ask-become-pass` when Mac App Store apps are missing.
 - ChatGPT and ComfyUI are Apple Silicon-only Homebrew casks and are skipped on Intel Macs.
 - Homebrew casks are installed with `--appdir=/Applications`; if Homebrew knows about a cask but the app bundle is missing from `/Applications`, the playbook reinstalls that cask there.
-- Codex's app cask is `codex-app`; Docker Desktop's cask is `docker-desktop`; GitHub Desktop's cask is `github`; Ollama's app cask is `ollama-app`.
+- Codex's app cask is `codex-app`; OrbStack's cask is `orbstack`; GitHub Desktop's cask is `github`; Ollama's app cask is `ollama-app`.
 
 Syntax check:
 
