@@ -1,0 +1,276 @@
+---
+- name: Install user-local CLI tools if missing
+  hosts: all
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_facts['env']['HOME'] }}"
+    user_path: "{{ ansible_facts['env']['PATH'] }}"
+    user_bin: "{{ user_home }}/.local/bin"
+    installer_dir: "{{ user_home }}/.local/share/ansible-cli-tools"
+    pixi_home: "{{ user_home }}/.pixi"
+    pixi_bin_dir: "{{ pixi_home }}/bin"
+    pixi_bin: "{{ pixi_bin_dir }}/pixi"
+    pixi_installer: "{{ installer_dir }}/pixi-install.sh"
+
+    # Commands you want available.
+    cli_tools:
+      - cmd: tmux
+        package: tmux
+        binary: tmux
+
+      - cmd: rg
+        package: ripgrep
+        binary: rg
+
+      - cmd: fd
+        package: fd-find
+        binary: fd
+        alternatives:
+          - fdfind
+
+      - cmd: bat
+        package: bat
+        binary: bat
+        alternatives:
+          - batcat
+
+      - cmd: jq
+        package: jq
+        binary: jq
+
+      - cmd: zoxide
+        package: zoxide
+        binary: zoxide
+
+      - cmd: eza
+        package: eza
+        binary: eza
+
+      - cmd: btop
+        package: btop
+        binary: btop
+
+      - cmd: ncdu
+        package: ncdu
+        binary: ncdu
+
+      - cmd: tree
+        package: tree
+        binary: tree
+
+      - cmd: rsync
+        package: rsync
+        binary: rsync
+
+      - cmd: git
+        package: git
+        binary: git
+
+  tasks:
+    - name: Ensure ~/.local/bin exists
+      ansible.builtin.file:
+        path: "{{ user_bin }}"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure installer cache directory exists
+      ansible.builtin.file:
+        path: "{{ installer_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check whether tools already exist in ~/.local/bin
+      ansible.builtin.shell: |
+        set -eu
+
+        if [ -x "{{ user_bin }}/{{ item.cmd }}" ]; then
+          echo present
+          exit 0
+        fi
+
+        echo missing
+      args:
+        executable: /bin/sh
+      loop: "{{ cli_tools }}"
+      register: tool_checks
+      changed_when: false
+
+    - name: Build missing tool list
+      ansible.builtin.set_fact:
+        missing_tools: >-
+          {{
+            tool_checks.results
+            | selectattr('stdout', 'equalto', 'missing')
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: Show already-present and missing tools
+      ansible.builtin.debug:
+        msg:
+          missing_commands: "{{ missing_tools | map(attribute='cmd') | list }}"
+          missing_packages: "{{ missing_tools | map(attribute='package') | list }}"
+
+    - name: Check whether Pixi is installed
+      ansible.builtin.shell: |
+        set -eu
+        PATH="{{ pixi_bin_dir }}:{{ user_bin }}:$PATH"
+
+        if command -v pixi >/dev/null 2>&1; then
+          command -v pixi
+        else
+          echo missing
+        fi
+      args:
+        executable: /bin/sh
+      register: pixi_check
+      changed_when: false
+
+    - name: Download Pixi installer if missing
+      ansible.builtin.get_url:
+        url: https://pixi.sh/install.sh
+        dest: "{{ pixi_installer }}"
+        mode: "0755"
+      when: pixi_check.stdout == "missing"
+
+    - name: Install Pixi if missing
+      ansible.builtin.shell: |
+        set -eu
+
+        sh "{{ pixi_installer }}"
+      args:
+        executable: /bin/sh
+        creates: "{{ pixi_bin }}"
+      environment:
+        PIXI_HOME: "{{ pixi_home }}"
+        PIXI_BIN_DIR: "{{ pixi_bin_dir }}"
+        PIXI_NO_PATH_UPDATE: "1"
+      when: pixi_check.stdout == "missing"
+
+    - name: Verify Pixi is available
+      ansible.builtin.shell: |
+        set -eu
+        PATH="{{ pixi_bin_dir }}:{{ user_bin }}:$PATH"
+
+        if command -v pixi >/dev/null 2>&1; then
+          command -v pixi
+        else
+          echo missing
+        fi
+      args:
+        executable: /bin/sh
+      register: pixi_verify
+      changed_when: false
+      failed_when: pixi_verify.stdout == "missing"
+
+    - name: Symlink Pixi into ~/.local/bin
+      ansible.builtin.file:
+        src: "{{ pixi_verify.stdout }}"
+        dest: "{{ user_bin }}/pixi"
+        state: link
+        force: true
+      when: pixi_verify.stdout != user_bin ~ "/pixi"
+
+    - name: Install missing tools with Pixi
+      ansible.builtin.shell: |
+        set -eu
+
+        pixi global install \
+          --channel conda-forge \
+          {% for pkg in missing_tools | map(attribute='package') | unique | list %}
+          {{ pkg }} \
+          {% endfor %}
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ pixi_bin_dir }}:{{ user_bin }}:{{ user_path }}"
+        PIXI_HOME: "{{ pixi_home }}"
+      when: missing_tools | length > 0
+
+    - name: Symlink Pixi-installed tools into ~/.local/bin
+      ansible.builtin.file:
+        src: "{{ pixi_bin_dir }}/{{ item.binary }}"
+        dest: "{{ user_bin }}/{{ item.cmd }}"
+        state: link
+        force: true
+      loop: "{{ missing_tools }}"
+      when: missing_tools | length > 0
+
+    - name: Check whether ~/.local/bin is in PATH
+      ansible.builtin.shell: |
+        case ":$PATH:" in
+          *:"{{ user_bin }}":*) echo present ;;
+          *) echo missing ;;
+        esac
+      args:
+        executable: /bin/sh
+      register: user_tool_path_check
+      changed_when: false
+
+    - name: Add ~/.local/bin to shell profile if missing from PATH
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.profile"
+        create: true
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - user local CLI tools"
+        block: |
+          if [ -d "$HOME/.local/bin" ]; then
+            case ":$PATH:" in
+              *:"$HOME/.local/bin":*) ;;
+              *) export PATH="$HOME/.local/bin:$PATH" ;;
+            esac
+          fi
+      when: user_tool_path_check.stdout == "missing"
+
+    - name: Check whether zoxide shell init is in profile
+      ansible.builtin.shell: |
+        if grep -F 'zoxide init' "{{ user_home }}/.profile" >/dev/null 2>&1; then
+          echo present
+        else
+          echo missing
+        fi
+      args:
+        executable: /bin/sh
+      register: zoxide_init_check
+      changed_when: false
+
+    - name: Add zoxide shell init to profile if missing
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.profile"
+        create: true
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - zoxide"
+        block: |
+          if command -v zoxide >/dev/null 2>&1; then
+            case "$SHELL" in
+              */zsh) eval "$(zoxide init zsh)" ;;
+              */bash) eval "$(zoxide init bash)" ;;
+            esac
+          fi
+      when: zoxide_init_check.stdout == "missing"
+
+    - name: Final command availability check
+      ansible.builtin.shell: |
+        missing=0
+
+        for cmd in pixi tmux rg fd bat jq zoxide eza btop ncdu tree rsync git; do
+          path="{{ user_bin }}/$cmd"
+
+          if [ -x "$path" ]; then
+            printf "%-8s %s\n" "$cmd" "$path"
+          else
+            printf "%-8s MISSING\n" "$cmd"
+            missing=1
+          fi
+        done
+
+        exit "$missing"
+      args:
+        executable: /bin/sh
+      register: final_check
+      changed_when: false
+
+    - name: Show final result
+      ansible.builtin.debug:
+        msg: "{{ final_check.stdout_lines }}"
