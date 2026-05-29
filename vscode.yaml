@@ -1,0 +1,134 @@
+---
+- name: Install Visual Studio Code extensions if missing
+  hosts: all
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_facts['env']['HOME'] }}"
+
+    vscode_cli_fallback_paths:
+      - /usr/local/bin/code
+      - /opt/homebrew/bin/code
+      - /Applications/Visual Studio Code.app/Contents/Resources/app/bin/code
+      - "{{ user_home }}/.local/bin/code"
+
+    # Extension packs and dependencies are intentionally omitted:
+    # - ms-python.python installs debugpy, Pylance, and Python Environments.
+    # - ms-toolsai.jupyter installs the Jupyter keymap, renderers, cell tags, and slideshow extensions.
+    # - ms-vscode.remote-repositories installs GitHub RemoteHub and Azure Repos support.
+    # - redhat.ansible installs Red Hat YAML support.
+    vscode_extensions:
+      - charliermarsh.ruff
+      - davidanson.vscode-markdownlint
+      - github.vscode-github-actions
+      - github.vscode-pull-request-github
+      - mechatroner.rainbow-csv
+      - mechatroner.rainbow-json
+      - mhutchie.git-graph
+      - ms-python.python
+      - ms-toolsai.datawrangler
+      - ms-toolsai.jupyter
+      - ms-vscode-remote.remote-containers
+      - ms-vscode.remote-repositories
+      - openai.chatgpt
+      - redhat.ansible
+      - tamasfe.even-better-toml
+      - timonwong.shellcheck
+      - yzhang.markdown-all-in-one
+
+  tasks:
+    - name: Locate Visual Studio Code CLI
+      ansible.builtin.shell: |
+        set -eu
+
+        if command -v code >/dev/null 2>&1; then
+          command -v code
+          exit 0
+        fi
+
+        {% for candidate in vscode_cli_fallback_paths %}
+        if [ -x {{ candidate | quote }} ]; then
+          printf '%s\n' {{ candidate | quote }}
+          exit 0
+        fi
+        {% endfor %}
+
+        echo missing
+      args:
+        executable: /bin/sh
+      register: vscode_cli_check
+      changed_when: false
+
+    - name: Stop when Visual Studio Code CLI is missing
+      ansible.builtin.fail:
+        msg: >-
+          Visual Studio Code's code CLI was not found. Install VS Code or add the
+          code command to PATH, then rerun this playbook.
+      when: vscode_cli_check.stdout == "missing"
+
+    - name: List installed Visual Studio Code extensions
+      ansible.builtin.shell: |
+        set -eu
+
+        {{ vscode_cli_check.stdout | quote }} --list-extensions | LC_ALL=C tr '[:upper:]' '[:lower:]'
+      args:
+        executable: /bin/sh
+      register: installed_vscode_extensions_check
+      changed_when: false
+
+    - name: Build missing Visual Studio Code extension list
+      ansible.builtin.set_fact:
+        installed_vscode_extensions: "{{ installed_vscode_extensions_check.stdout_lines | default([]) }}"
+        missing_vscode_extensions: >-
+          {{
+            vscode_extensions
+            | map('lower')
+            | reject('in', installed_vscode_extensions_check.stdout_lines | default([]))
+            | list
+          }}
+
+    - name: Show already-present and missing Visual Studio Code extensions
+      ansible.builtin.debug:
+        msg:
+          code_cli: "{{ vscode_cli_check.stdout }}"
+          missing_extensions: "{{ missing_vscode_extensions }}"
+
+    - name: Install missing Visual Studio Code extensions
+      ansible.builtin.shell: |
+        set -eu
+
+        {{ vscode_cli_check.stdout | quote }} --install-extension {{ item | quote }}
+      args:
+        executable: /bin/sh
+      loop: "{{ missing_vscode_extensions }}"
+      when: missing_vscode_extensions | length > 0
+
+    - name: Verify Visual Studio Code extensions after install
+      ansible.builtin.shell: |
+        set -eu
+
+        {{ vscode_cli_check.stdout | quote }} --list-extensions | LC_ALL=C tr '[:upper:]' '[:lower:]'
+      args:
+        executable: /bin/sh
+      register: final_vscode_extensions_check
+      changed_when: false
+
+    - name: Build remaining missing Visual Studio Code extension list
+      ansible.builtin.set_fact:
+        remaining_vscode_extensions: >-
+          {{
+            vscode_extensions
+            | map('lower')
+            | reject('in', final_vscode_extensions_check.stdout_lines | default([]))
+            | list
+          }}
+
+    - name: Stop when Visual Studio Code extensions are still missing
+      ansible.builtin.fail:
+        msg: "These Visual Studio Code extensions are still missing: {{ remaining_vscode_extensions | join(', ') }}"
+      when: remaining_vscode_extensions | length > 0
+
+    - name: Show Visual Studio Code extension install summary
+      ansible.builtin.debug:
+        msg:
+          installed_extensions: "{{ vscode_extensions }}"

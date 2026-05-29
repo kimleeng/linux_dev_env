@@ -23,7 +23,7 @@ The playbook also adds `~/.local/bin` to `~/.profile` when needed and adds `zoxi
 ## Run on localhost
 
 ```sh
-ansible-playbook -i localhost, -c local ansible.yaml
+ansible-playbook -i localhost, -c local shell.yaml
 ```
 
 The comma after `localhost` is required. It tells Ansible that `localhost` is an inline inventory entry, not a file path.
@@ -33,7 +33,7 @@ The comma after `localhost` is required. It tells Ansible that `localhost` is an
 Run the playbook as the user who should receive the tools:
 
 ```sh
-ansible-playbook -i "host.example.com," -u remote_user ansible.yaml
+ansible-playbook -i "host.example.com," -u remote_user shell.yaml
 ```
 
 This installs into `remote_user`'s home directory on `host.example.com`.
@@ -50,7 +50,7 @@ example-host ansible_host=host.example.com ansible_user=remote_user
 Run:
 
 ```sh
-ansible-playbook -i inventory.ini ansible.yaml
+ansible-playbook -i inventory.ini shell.yaml
 ```
 
 ## Run on multiple servers
@@ -65,7 +65,7 @@ server_three ansible_host=server-three.example.com ansible_user=another_user
 Run:
 
 ```sh
-ansible-playbook -i inventory.ini ansible.yaml
+ansible-playbook -i inventory.ini shell.yaml
 ```
 
 ## Pin the remote Python interpreter
@@ -88,7 +88,7 @@ If you connect as an admin account, the tools are installed for that admin accou
 ## Syntax check
 
 ```sh
-ansible-playbook -i localhost, -c local --syntax-check ansible.yaml
+ansible-playbook -i localhost, -c local --syntax-check shell.yaml
 ```
 
 ## macOS app installs
@@ -133,4 +133,53 @@ Syntax check:
 
 ```sh
 ansible-playbook -i localhost, -c local --syntax-check macos.yaml
+```
+
+## VS Code extensions
+
+`vscode.yaml` installs Visual Studio Code extensions with the `code` CLI. It keeps the configured list focused on top-level extensions and lets VS Code install extension packs and dependencies.
+
+Run it locally:
+
+```sh
+ansible-playbook -i localhost, -c local vscode.yaml
+```
+
+It installs:
+
+- `charliermarsh.ruff`
+- `davidanson.vscode-markdownlint`
+- `github.vscode-github-actions`
+- `github.vscode-pull-request-github`
+- `mechatroner.rainbow-csv`
+- `mechatroner.rainbow-json`
+- `mhutchie.git-graph`
+- `ms-python.python`
+- `ms-toolsai.datawrangler`
+- `ms-toolsai.jupyter`
+- `ms-vscode-remote.remote-containers`
+- `ms-vscode.remote-repositories`
+- `openai.chatgpt`
+- `redhat.ansible`
+- `tamasfe.even-better-toml`
+- `timonwong.shellcheck`
+- `yzhang.markdown-all-in-one`
+
+The following are omitted because they are installed by the extensions above:
+
+- `github.remotehub`
+- `ms-python.debugpy`
+- `ms-python.vscode-pylance`
+- `ms-python.vscode-python-envs`
+- `ms-toolsai.jupyter-keymap`
+- `ms-toolsai.jupyter-renderers`
+- `ms-toolsai.vscode-jupyter-cell-tags`
+- `ms-toolsai.vscode-jupyter-slideshow`
+- `ms-vscode.azure-repos`
+- `redhat.vscode-yaml`
+
+Syntax check:
+
+```sh
+ansible-playbook -i localhost, -c local --syntax-check vscode.yaml
 ```
