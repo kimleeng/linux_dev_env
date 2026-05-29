@@ -1,0 +1,309 @@
+---
+- name: Install macOS applications and developer tools
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    user_home: "{{ ansible_facts['env']['HOME'] }}"
+    expected_homebrew_prefix: "{{ '/opt/homebrew' if ansible_facts['architecture'] == 'arm64' else '/usr/local' }}"
+    expected_brew_bin: "{{ expected_homebrew_prefix }}/bin/brew"
+    homebrew_install_url: https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+
+    macos_brew_formulae:
+      - label: Mac App Store CLI
+        formula: mas
+        commands:
+          - mas
+
+    macos_cask_apps:
+      - label: Visual Studio Code
+        cask: visual-studio-code
+        app_paths:
+          - /Applications/Visual Studio Code.app
+
+      - label: 1Password
+        cask: 1password
+        app_paths:
+          - /Applications/1Password.app
+
+      - label: Obsidian
+        cask: obsidian
+        app_paths:
+          - /Applications/Obsidian.app
+
+      - label: Codex
+        cask: codex-app
+        app_paths:
+          - /Applications/Codex.app
+
+      - label: ChatGPT
+        cask: chatgpt
+        requires_arm64: true
+        app_paths:
+          - /Applications/ChatGPT.app
+
+      - label: WhatsApp
+        cask: whatsapp
+        app_paths:
+          - /Applications/WhatsApp.app
+
+      - label: Vivaldi
+        cask: vivaldi
+        app_paths:
+          - /Applications/Vivaldi.app
+
+      - label: Warp
+        cask: warp
+        app_paths:
+          - /Applications/Warp.app
+
+      - label: Docker Desktop
+        cask: docker-desktop
+        app_paths:
+          - /Applications/Docker.app
+
+      - label: OrbStack
+        cask: orbstack
+        app_paths:
+          - /Applications/OrbStack.app
+
+      - label: Rectangle
+        cask: rectangle
+        app_paths:
+          - /Applications/Rectangle.app
+
+      - label: GitHub Desktop
+        cask: github
+        app_paths:
+          - /Applications/GitHub Desktop.app
+
+      - label: Slack
+        cask: slack
+        app_paths:
+          - /Applications/Slack.app
+
+      - label: Stats
+        cask: stats
+        app_paths:
+          - /Applications/Stats.app
+
+      - label: Ollama
+        cask: ollama-app
+        app_paths:
+          - /Applications/Ollama.app
+
+      - label: ComfyUI
+        cask: comfyui
+        requires_arm64: true
+        app_paths:
+          - /Applications/ComfyUI.app
+
+    macos_app_store_apps:
+      - label: Amphetamine
+        id: 937984704
+        app_paths:
+          - /Applications/Amphetamine.app
+
+  pre_tasks:
+    - name: Stop when this playbook is not running on macOS
+      ansible.builtin.fail:
+        msg: This playbook is only for macOS hosts.
+      when: ansible_facts['system'] != "Darwin"
+
+  tasks:
+    - name: Check whether Homebrew is installed
+      ansible.builtin.shell: |
+        command -v brew
+      args:
+        executable: /bin/sh
+      register: brew_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Homebrew if missing
+      ansible.builtin.shell: |
+        /bin/bash -c "$(curl -fsSL {{ homebrew_install_url | quote }})"
+      args:
+        executable: /bin/sh
+        creates: "{{ expected_brew_bin }}"
+      environment:
+        NONINTERACTIVE: "1"
+      when: brew_check.rc != 0
+
+    - name: Set Homebrew paths
+      ansible.builtin.set_fact:
+        brew_bin: "{{ brew_check.stdout if brew_check.rc == 0 else expected_brew_bin }}"
+        homebrew_prefix: "{{ (brew_check.stdout if brew_check.rc == 0 else expected_brew_bin) | dirname | dirname }}"
+
+    - name: Set Homebrew environment
+      ansible.builtin.set_fact:
+        homebrew_path: "{{ homebrew_prefix }}/bin:{{ homebrew_prefix }}/sbin:{{ ansible_facts['env']['PATH'] }}"
+
+    - name: Verify Homebrew is available
+      ansible.builtin.shell: |
+        {{ brew_bin | quote }} --version
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      register: brew_version
+      changed_when: false
+
+    - name: Add Homebrew shell environment to zprofile
+      ansible.builtin.blockinfile:
+        path: "{{ user_home }}/.zprofile"
+        create: true
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Homebrew"
+        block: |
+          eval "$({{ brew_bin }} shellenv)"
+
+    - name: Check Homebrew formula commands
+      ansible.builtin.shell: |
+        set -eu
+
+        {% for command in item.commands %}
+        command -v {{ command | quote }} >/dev/null 2>&1 || exit 1
+        {% endfor %}
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ macos_brew_formulae }}"
+      register: formula_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Install missing Homebrew formulae
+      ansible.builtin.shell: |
+        set -eu
+
+        {{ brew_bin | quote }} install {{ item.item.formula | quote }}
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ formula_checks.results }}"
+      when: item.rc != 0
+
+    - name: Show Homebrew casks skipped on unsupported architecture
+      ansible.builtin.debug:
+        msg: "{{ item.label }} requires Apple Silicon; skipping on {{ ansible_facts['architecture'] }}."
+      loop: "{{ macos_cask_apps }}"
+      when:
+        - item.requires_arm64 | default(false)
+        - ansible_facts['architecture'] != "arm64"
+
+    - name: Check Homebrew cask applications
+      ansible.builtin.shell: |
+        set -eu
+
+        {% for app_path in item.app_paths %}
+        if [ -e {{ app_path | quote }} ]; then
+          exit 0
+        fi
+        {% endfor %}
+
+        exit 1
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ macos_cask_apps }}"
+      register: cask_app_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Install missing Homebrew casks
+      ansible.builtin.shell: |
+        set -eu
+
+        if {{ brew_bin | quote }} list --cask --versions {{ item.item.cask | quote }} >/dev/null 2>&1; then
+          {{ brew_bin | quote }} reinstall --cask --appdir=/Applications {{ item.item.cask | quote }}
+        else
+          {{ brew_bin | quote }} install --cask --appdir=/Applications {{ item.item.cask | quote }}
+        fi
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ cask_app_checks.results }}"
+      when:
+        - item.rc != 0
+        - not (item.item.requires_arm64 | default(false)) or ansible_facts['architecture'] == "arm64"
+
+    - name: Check Mac App Store applications
+      ansible.builtin.shell: |
+        set -eu
+
+        {% for app_path in item.app_paths %}
+        if [ -e {{ app_path | quote }} ]; then
+          exit 0
+        fi
+        {% endfor %}
+
+        if mas list | awk '{print $1}' | grep -Fx {{ item.id | string | quote }} >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        exit 1
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ macos_app_store_apps }}"
+      register: mas_app_checks
+      changed_when: false
+      failed_when: false
+
+    - name: Build missing Mac App Store app list
+      ansible.builtin.set_fact:
+        missing_mas_apps: >-
+          {{
+            mas_app_checks.results
+            | selectattr('rc', 'ne', 0)
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: Check Mac App Store account
+      ansible.builtin.shell: |
+        mas account >/dev/null
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      register: mas_account_check
+      changed_when: false
+      failed_when: false
+      when: missing_mas_apps | length > 0
+
+    - name: Stop when Mac App Store apps are missing and no account is signed in
+      ansible.builtin.fail:
+        msg: >-
+          The Mac App Store apps are missing: {{ missing_mas_apps | map(attribute='label') | join(', ') }}.
+          Sign in to the App Store, then rerun this playbook.
+      when:
+        - missing_mas_apps | length > 0
+        - mas_account_check.rc | default(1) != 0
+
+    - name: Install missing Mac App Store apps
+      ansible.builtin.shell: |
+        set -eu
+
+        mas install {{ item.id }}
+      args:
+        executable: /bin/sh
+      environment:
+        PATH: "{{ homebrew_path }}"
+      loop: "{{ missing_mas_apps }}"
+      when: missing_mas_apps | length > 0
+
+    - name: Show macOS install summary
+      ansible.builtin.debug:
+        msg:
+          homebrew: "{{ brew_version.stdout_lines }}"
+          formulae: "{{ macos_brew_formulae | map(attribute='formula') | list }}"
+          casks: "{{ macos_cask_apps | map(attribute='cask') | list }}"
+          app_store_apps: "{{ macos_app_store_apps | map(attribute='label') | list }}"

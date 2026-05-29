@@ -90,3 +90,47 @@ If you connect as an admin account, the tools are installed for that admin accou
 ```sh
 ansible-playbook -i localhost, -c local --syntax-check ansible.yaml
 ```
+
+## macOS app installs
+
+`macos.yaml` installs developer tools and desktop apps on a Mac using Homebrew, Homebrew Cask, and the Mac App Store CLI.
+
+Run it locally on macOS:
+
+```sh
+ansible-playbook -i localhost, -c local macos.yaml
+```
+
+It checks for and installs:
+
+- Visual Studio Code
+- 1Password
+- Obsidian
+- Codex
+- ChatGPT
+- WhatsApp
+- Vivaldi
+- Warp
+- Docker Desktop
+- OrbStack
+- Rectangle
+- Amphetamine
+- GitHub Desktop
+- Slack
+- Stats
+- Ollama
+- ComfyUI
+
+Notes:
+
+- Homebrew is installed automatically if it is missing.
+- Amphetamine is installed from the Mac App Store with `mas`, so you need to be signed in to the App Store before that app can be installed.
+- ChatGPT and ComfyUI are Apple Silicon-only Homebrew casks and are skipped on Intel Macs.
+- Homebrew casks are installed with `--appdir=/Applications`; if Homebrew knows about a cask but the app bundle is missing from `/Applications`, the playbook reinstalls that cask there.
+- Codex's app cask is `codex-app`; Docker Desktop's cask is `docker-desktop`; GitHub Desktop's cask is `github`; Ollama's app cask is `ollama-app`.
+
+Syntax check:
+
+```sh
+ansible-playbook -i localhost, -c local --syntax-check macos.yaml
+```
